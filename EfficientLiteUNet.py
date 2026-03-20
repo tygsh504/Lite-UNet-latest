@@ -103,7 +103,9 @@ class Lite_UNet():
         y_true = tf.keras.layers.Flatten()(y_true)
         y_pred = tf.keras.layers.Flatten()(y_pred)
         intersection = tf.reduce_sum(y_true * y_pred)
-        return (2. * intersection + smooth) / (tf.reduce_sum(y_true) + tf.reduce_sum(y_true) + smooth)
+        
+        # FIX: The denominator must add y_true AND y_pred
+        return (2. * intersection + smooth) / (tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) + smooth)
 
     def dice_loss(self, y_true, y_pred):
         return 1.0 - self.dice_coef(y_true, y_pred)
