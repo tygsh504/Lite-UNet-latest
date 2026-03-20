@@ -1,7 +1,6 @@
 # Ignore the virtual environment directory
 venv/
 /__pycache__/
-*.py
 /training_ouput
 /testing_result
 /testing_result_1
