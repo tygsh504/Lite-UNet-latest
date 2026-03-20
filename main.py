@@ -1,5 +1,6 @@
 from Dataloader import DataLoader
-from LiteUNet import Lite_UNet
+from EfficientLiteUNet import Lite_UNet
+# from LiteUNet import Lite_UNet
 import argparse
 import tensorflow as tf
 
@@ -28,7 +29,7 @@ parser.add_argument('--img_height',default=640,type=int)
 parser.add_argument('--batch_size', default=4, type=int, help='Batch size for training.')
 parser.add_argument('--lr', default=0.0001, type=float, help='Learning rate for optimizers.')
 parser.add_argument('--epochs', default=100, type=int, help='Number of training epochs.')
-parser.add_argument('--output_dir', default='Lite-UNet_model.h5', type=str, help='Path for saving the model after training.')
+parser.add_argument('--output_dir', default='Lite-UNet_model', type=str, help='Path for saving the model after training.')
 
 # NEW ARGUMENT: Directory to store Excel results and Graphs
 parser.add_argument('--result_dir', default=r"C:\Users\User\Desktop\Lite-UNet\training_output", 
@@ -40,6 +41,7 @@ dl=DataLoader(args)
 train_gen,val_gen=dl.data_generator()
 train_steps=dl.get_train_steps_per_epoch()
 val_steps=dl.get_validation_steps_per_epoch()
+
 
 LiteUNet=Lite_UNet(args)
 # Capture the model and history object returned by train 

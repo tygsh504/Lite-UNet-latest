@@ -1,7 +1,8 @@
 import numpy as np
 import tensorflow as tf
 import keras
-from mobilenetv2 import MobileNetV2
+# --- NEW: Import EfficientNetB0 instead of MobileNetV2 ---
+from tensorflow.keras.applications import EfficientNetB0
 from keras import optimizers
 from keras.models import load_model
 from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, InputLayer, Activation, BatchNormalization
@@ -13,27 +14,17 @@ from tensorflow.keras import mixed_precision
 import matplotlib.pyplot as plt 
 import os 
 from datetime import datetime 
-import pandas as pd # NEW: Import pandas for Excel handling
+import pandas as pd 
 
-# Enable mixed precision globally
-# mixed_precision.set_global_policy("mixed_float16")
-
-# Custom callback to track the actual learning rate per epoch
 class LrHistory(Callback):
     """Callback to log the current learning rate at the end of each epoch."""
     def on_epoch_end(self, epoch, logs=None):
         logs = logs or {}
-        # Only add if it hasn't been added by other callbacks (like ReduceLROnPlateau)
         if 'lr' not in logs and hasattr(self.model.optimizer, 'lr'):
-            # Get the current learning rate value
             lr = self.model.optimizer.lr
             if callable(lr):
-                # For schedules, evaluate the function
                 lr = lr(self.model.optimizer.iterations)
-                
-            # Log it so Keras' built-in History callback appends it once per epoch
             logs['lr'] = float(tf.keras.backend.get_value(lr))
-
 
 class Lite_UNet():
     
@@ -44,14 +35,12 @@ class Lite_UNet():
         self.lr = args.lr
         self.epochs = args.epochs
         self.output_dir = args.output_dir
-        # NEW: capture the result directory from arguments
         self.result_dir = args.result_dir 
         
-        # Ensure the directory exists
         if self.result_dir:
             os.makedirs(self.result_dir, exist_ok=True)
 
-    def build_model(self, width_muliplier=0.35, weights="imagenet"):
+    def build_model(self, weights="imagenet"):
         def decoder_block(x, residual, n_filters, n_conv_layers=2):
             up = UpSampling2D((2, 2))(x)
             merge = Concatenate()([up, residual])
@@ -69,12 +58,25 @@ class Lite_UNet():
             return [encoder.get_layer(layer).output for layer in concat_layers], encoder.get_layer(output_layer).output
 
         model_input = Input(shape=(self.img_height, self.img_width, 3), name="input_img")
-        # MobileNetV2 encoder
-        model_encoder = MobileNetV2(input_tensor=model_input, weights=weights, include_top=False, alpha=width_muliplier)
+        
+        # --- NEW: EfficientNetB0 Encoder ---
+        model_encoder = EfficientNetB0(
+            input_tensor=model_input, 
+            weights=weights, 
+            include_top=False
+        )
+        
+        # Mapped to EfficientNetB0's specific activation layers for U-Net skip connections
         concat_layers, encoder_output = get_encoder_layers(
             model_encoder,
-            ["input_img", "block_1_expand_relu", "block_3_expand_relu", "block_6_expand_relu", "block_13_expand_relu"],
-            "block_16_expand_relu"
+            [
+                "input_img", 
+                "block2a_expand_activation", 
+                "block3a_expand_activation", 
+                "block4a_expand_activation", 
+                "block6a_expand_activation"
+            ],
+            "top_activation"
         )
 
         filters = [3, 48, 48, 96, 192]
@@ -101,14 +103,12 @@ class Lite_UNet():
         y_true = tf.keras.layers.Flatten()(y_true)
         y_pred = tf.keras.layers.Flatten()(y_pred)
         intersection = tf.reduce_sum(y_true * y_pred)
-        return (2. * intersection + smooth) / (tf.reduce_sum(y_true) + tf.reduce_sum(y_pred) + smooth)
+        return (2. * intersection + smooth) / (tf.reduce_sum(y_true) + tf.reduce_sum(y_true) + smooth)
 
     def dice_loss(self, y_true, y_pred):
         return 1.0 - self.dice_coef(y_true, y_pred)
 
     def define_callbacks(self):
-        # Determine where to save the best model checkpoint
-        # If result_dir is set, save 'best_model.h5' there, otherwise use output_dir
         if self.result_dir:
             checkpoint_path = os.path.join(self.result_dir, "best_model_weights.h5")
         else:
@@ -149,7 +149,6 @@ class Lite_UNet():
             callbacks=self.define_callbacks()
         )
         
-        # --- Save the last model weights ---
         if self.result_dir:
             last_weights_path = os.path.join(self.result_dir, "last_model_weights.h5")
             model.save_weights(last_weights_path)
@@ -158,9 +157,6 @@ class Lite_UNet():
         return model, history
 
     def plot_history(self, history):
-        """Plots Learning Rate, Training/Validation Loss, and Training/Validation Dice Coefficient over epochs and saves the graph."""
-        
-        # Use the result_dir if provided, otherwise default
         if self.result_dir:
             graphs_dir = self.result_dir
         else:
@@ -170,7 +166,6 @@ class Lite_UNet():
         
         plt.figure(figsize=(15, 5))
         
-        # 1. Learning Rate graph
         plt.subplot(1, 3, 1)
         plt.plot(history.history.get('lr', []))
         plt.title('1. Learning Rate over Epochs')
@@ -178,7 +173,6 @@ class Lite_UNet():
         plt.xlabel('Epoch')
         plt.grid(True)
         
-        # 2. Train and Validation Loss graph
         plt.subplot(1, 3, 2)
         plt.plot(history.history.get('loss', []), label='Train Loss')
         if 'val_loss' in history.history:
@@ -189,7 +183,6 @@ class Lite_UNet():
         plt.legend()
         plt.grid(True)
 
-        # 3. Train and Validation Dice Coef graph
         plt.subplot(1, 3, 3)
         if 'dice_coef' in history.history:
             plt.plot(history.history['dice_coef'], label='Train Dice Coef')
@@ -203,7 +196,6 @@ class Lite_UNet():
         
         plt.tight_layout()
 
-        # Save the figure
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"training_graphs_{timestamp}.png"
         save_path = os.path.join(graphs_dir, filename)
@@ -213,30 +205,21 @@ class Lite_UNet():
         
         print(f"Training graphs successfully saved to: {save_path}")
 
-    # NEW FUNCTION: Save metrics to Excel
     def save_results_to_excel(self, history):
-        """Saves all training metrics from history to an Excel file."""
-        
         if self.result_dir:
             save_dir = self.result_dir
         else:
-            # Fallback if no directory specified
             save_dir = r"C:\Users\User\Desktop\Lite-UNet\training_output"
             
         os.makedirs(save_dir, exist_ok=True)
 
-        # Create DataFrame from history dictionary
         df = pd.DataFrame(history.history)
-        
-        # Add an 'epoch' column at the beginning (1-based index)
         df.insert(0, 'epoch', range(1, len(df) + 1))
         
-        # Construct filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"training_metrics_{timestamp}.xlsx"
         save_path = os.path.join(save_dir, filename)
         
-        # Save to Excel
         try:
             df.to_excel(save_path, index=False)
             print(f"Training metrics successfully saved to Excel: {save_path}")
