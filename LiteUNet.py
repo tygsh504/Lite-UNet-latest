@@ -134,7 +134,7 @@ class Lite_UNet():
         model = self.build_model()
         base_opt = tf.keras.optimizers.Adam(self.lr, clipnorm=1.0)
         opt = base_opt
-        metrics = ['accuracy', self.dice_coef, self.iou, Recall(), Precision()]
+        metrics = ['acc', self.dice_coef, self.iou, Recall(name='rec'), Precision(name='pre')]
         model.compile(loss=self.dice_loss, optimizer=opt, metrics=metrics)
         return model
 

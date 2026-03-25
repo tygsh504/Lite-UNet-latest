@@ -6,3 +6,5 @@ venv/
 /testing_result_1
 *.h5
 *.png
+/Efficient_lite_unet_testing_result_1
+/training_output

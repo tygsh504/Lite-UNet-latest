@@ -10,11 +10,12 @@ from tensorflow.python.framework.convert_to_constants import convert_variables_t
 
 # --- IMPORT LITE-UNET ---
 from LiteUNet import Lite_UNet
+# from EfficientLiteUNet import Lite_UNet
 
 # --- USER CONFIGURATION SECTION ---
-MODEL_WEIGHTS_PATH = r"C:\Users\User\Desktop\Lite-UNet\training_output\best_model_weights.h5" 
+MODEL_WEIGHTS_PATH = r"C:\Users\User\Desktop\Lite-UNet\lite-unet-best.h5" 
 BASE_DATA_PATH = r"C:\Users\User\Desktop\Paddy_Dataset"
-MAIN_OUTPUT_DIR = r"C:\Users\User\Desktop\Lite-UNet\lite_unet_testing_result_1"
+MAIN_OUTPUT_DIR = r"C:\Users\User\Desktop\Lite-UNet\testing_result_1"
 
 # The 7 disease folders
 DISEASES = ["Bacterial Leaf Blight", "Bacterial Leaf Streak", "Blast", "Brown Spot", "DownyMildew", "Hispa", "Tungro"]
@@ -98,8 +99,13 @@ def calculate_metrics(pred_mask, true_mask):
 
 def save_visual_result(image_np, true_mask_np, pred_mask_np, filename, dice_score, output_dir):
     """Saves side-by-side comparison of Original, GT, and Prediction."""
-    # Convert image back from [-1, 1] (Dataloader format) to [0, 1] for visualization
-    img_display = (image_np + 1.0) / 2.0
+    # For Lite-UNet only
+    # # Convert image back from [-1, 1] (Dataloader format) to [0, 1] for visualization
+    # img_display = (image_np + 1.0) / 2.0
+
+    # For EfficientNet-based Lite-UNet
+    # Convert image from [0, 255] (EfficientNet format) to [0, 1] for visualization
+    img_display = image_np / 255.0
     img_display = np.clip(img_display, 0, 1) # Ensure safe bounds
     
     true_bin = (true_mask_np > 0.5).astype(np.uint8)
@@ -190,6 +196,9 @@ def run_test_on_disease(disease_name, model, params, flops):
         with pd.ExcelWriter(excel_path, engine='openpyxl') as writer:
             summary_df.to_excel(writer, sheet_name='Summary', index=False)
             df[['Filename'] + metric_cols].to_excel(writer, sheet_name='Detailed', index=False)
+            
+        return means
+    return None
 
 if __name__ == '__main__':
     args = MockArgs()
@@ -211,7 +220,27 @@ if __name__ == '__main__':
     print(f"Model Parameters: {params:,}")
     print(f"Model FLOPs: {flops:,}")
 
+    all_disease_means = []
     for disease in DISEASES:
-        run_test_on_disease(disease, model, params, flops)
+        disease_mean = run_test_on_disease(disease, model, params, flops)
+        if disease_mean:
+            disease_mean['Disease'] = disease
+            all_disease_means.append(disease_mean)
+            
+    if all_disease_means:
+        calc_mean_dir = os.path.join(MAIN_OUTPUT_DIR, "calculated_mean")
+        os.makedirs(calc_mean_dir, exist_ok=True)
+        means_df = pd.DataFrame(all_disease_means)
+        cols = ['Disease'] + [c for c in means_df.columns if c != 'Disease']
+        means_df = means_df[cols]
+        
+        # Calculate the overall mean and append it to the DataFrame
+        overall_mean = means_df.mean(numeric_only=True).to_dict()
+        overall_mean['Disease'] = 'OVERALL MEAN'
+        means_df = pd.concat([means_df, pd.DataFrame([overall_mean])], ignore_index=True)
+        
+        save_path = os.path.join(calc_mean_dir, "calculated_mean.xlsx")
+        means_df.to_excel(save_path, index=False)
+        print(f"\nCalculated means for all diseases saved to: {save_path}")
 
     print("\n--- All Testing Completed ---")

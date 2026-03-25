@@ -136,7 +136,7 @@ class Lite_UNet():
         model = self.build_model()
         base_opt = tf.keras.optimizers.Adam(self.lr, clipnorm=1.0)
         opt = base_opt
-        metrics = ['accuracy', self.dice_coef, self.iou, Recall(), Precision()]
+        metrics = ['acc', self.dice_coef, self.iou, Recall(name='rec'), Precision(name='pre')]
         model.compile(loss=self.dice_loss, optimizer=opt, metrics=metrics)
         return model
 
@@ -148,7 +148,8 @@ class Lite_UNet():
             epochs=self.epochs,
             steps_per_epoch=num_train_batches,
             validation_steps=num_val_batches,
-            callbacks=self.define_callbacks()
+            callbacks=self.define_callbacks(),
+            verbose=1  # Changed back to 1 to show the animated progress bar
         )
         
         if self.result_dir:
